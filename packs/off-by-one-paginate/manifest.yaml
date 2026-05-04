@@ -1,0 +1,24 @@
+pack_format_version: 1
+
+id: off-by-one-paginate
+title: Pagination off-by-one
+track: bug_review
+difficulty: easy
+tags: [bug, pagination, off-by-one]
+recommended_minutes: 5
+
+bug_review:
+  prompt: "Where is the bug?"
+  choices:
+    - id: empty_check
+      label: "The empty-input early return is wrong."
+      correct: false
+    - id: index_math
+      label: "Page index math is off — last page is dropped when len(items) is a multiple of pageSize."
+      correct: false
+    - id: slice_end
+      label: "end is computed as start + pageSize without clamping to len(items), so the final page panics on slice."
+      correct: true
+    - id: page_zero
+      label: "page=0 should be treated as page=1 but isn't."
+      correct: false
