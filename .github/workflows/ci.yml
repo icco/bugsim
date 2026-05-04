@@ -81,7 +81,7 @@ jobs:
               cp "$src" "$sol_work/src/$(basename "$src")"
             done
             echo "== $pack: solution applied (must pass) =="
-            if ! (cd "$sol_work" && node --test --experimental-strip-types); then
+            if ! (cd "$sol_work" && node --test); then
               echo "FAIL: $pack solution did not pass its own hidden_tests"
               fail=1
             fi
@@ -91,7 +91,7 @@ jobs:
             cp -R "packs/${pack}/skeleton/." "$skel_work/"
             cp -R "packs/${pack}/hidden_tests/." "$skel_work/"
             echo "== $pack: skeleton only (must fail) =="
-            if (cd "$skel_work" && node --test --experimental-strip-types > /dev/null 2>&1); then
+            if (cd "$skel_work" && node --test > /dev/null 2>&1); then
               echo "FAIL: $pack skeleton accidentally passes hidden_tests"
               fail=1
             fi

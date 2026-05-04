@@ -8,10 +8,10 @@ tags: [typescript, pagination, sql, distributed]
 recommended_minutes: 7
 
 bug_review:
-  prompt: "Why does the listener occasionally skip 4–6 events even though no events are deleted?"
+  prompt: "Why does the listener silently skip every event in a tied-timestamp burst except the ones that happened to land on page 1?"
   choices:
     - id: strict_gt_on_non_unique_key
-      label: "Cursor uses a strict `> last.createdAt` filter on a non-unique sort key. When several events share the same `createdAt` (e.g. a single transaction's writes), every tied row that was on the *previous* page boundary is dropped — the next query excludes them entirely."
+      label: "The cursor encodes only `createdAt`, but `createdAt` is not unique. The next page's `> cursor` filter excludes every row whose `createdAt` equals the cursor — including the rows from the same tied burst that haven't been delivered yet. Fix: use a tiebreaker such as `(created_at, id)` for both the ORDER BY and the cursor comparison."
       correct: true
     - id: unstable_sort
       label: "Array.prototype.sort is unstable in V8, so tied rows end up in different positions on each page and a few are missed."

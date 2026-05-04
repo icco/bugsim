@@ -146,8 +146,9 @@ Example (`runners/go.json`):
 ```
 
 The TypeScript runner (`runners/typescript.json`) uses Node's built-in
-test runner with native type stripping so packs do not require an `npm
-install` step (which would need network access):
+test runner. Type stripping is on by default in Node 24+ (stable since
+v24.12.0), so `.ts` files run directly with no install step — which is
+important because the runner is invoked with `--network=none`:
 
 ```json
 {
@@ -155,10 +156,16 @@ install` step (which would need network access):
   "image": "node:24-slim",
   "env": { "NODE_NO_WARNINGS": "1" },
   "commands": {
-    "test": ["node", "--test", "--experimental-strip-types"]
+    "test": ["node", "--test"]
   }
 }
 ```
+
+The official `node:24-slim` image is built from the prebuilt
+nodejs.org binaries, which have shipped with `full-icu` since Node 14.
+That matters because `Intl.Segmenter` and other locale-sensitive APIs
+the seed packs rely on segfault on `small-icu` builds (see
+[nodejs/node#51752](https://github.com/nodejs/node/issues/51752)).
 
 TypeScript packs should follow this layout (the seed packs under
 `packs/ts-*` are working references):
