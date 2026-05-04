@@ -134,7 +134,7 @@ Example (`runners/go.json`):
 ```json
 {
   "id": "go",
-  "image": "golang:1.22",
+  "image": "golang:1.26",
   "env": {
     "GOCACHE": "/tmp/go-build",
     "GOMODCACHE": "/tmp/go-mod"
