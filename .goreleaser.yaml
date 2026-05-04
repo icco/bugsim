@@ -1,0 +1,84 @@
+version: 2
+
+project_name: bugsim
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: bugsim
+    main: ./cmd/bugsim
+    binary: bugsim
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.CommitDate}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: bugsim
+    ids: [bugsim]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+release:
+  github:
+    owner: icco
+    name: bugsim
+  draft: false
+  prerelease: auto
+
+homebrew_casks:
+  - name: bugsim
+    ids: [bugsim]
+    binaries: [bugsim]
+    repository:
+      owner: icco
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: "[email protected]"
+    commit_msg_template: "bugsim {{ .Tag }}"
+    homepage: "https://github.com/icco/bugsim"
+    description: "Terminal flight simulator for software engineers."
+    caveats: |
+      bugsim runs each implement-track pack inside a Docker container.
+      Install and start Docker before running `bugsim play`.
+
+      Seed packs are not included with the cask. Either clone
+      https://github.com/icco/bugsim and pass `--packs ./packs`, or
+      point `--packs` at any directory of pack subdirectories.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/bugsim"]
+          end

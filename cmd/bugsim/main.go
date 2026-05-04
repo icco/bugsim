@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"time"
 
@@ -17,6 +18,14 @@ import (
 	"github.com/icco/bugsim/internal/tui"
 )
 
+// These are populated at link time by goreleaser. When unset (e.g. `go run`),
+// versionString falls back to the embedded build info.
+var (
+	version = ""
+	commit  = ""
+	date    = ""
+)
+
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -25,14 +34,26 @@ func main() {
 	}
 }
 
+func versionString() string {
+	if version != "" {
+		return fmt.Sprintf("bugsim %s (commit %s, built %s)", version, commit, date)
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return fmt.Sprintf("bugsim %s", info.Main.Version)
+	}
+	return "bugsim (devel)"
+}
+
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "bugsim",
 		Short:         "Terminal flight simulator for software engineers",
 		Long:          "bugsim runs short, repeatable practice scenarios for implementation and debugging skills.",
+		Version:       versionString(),
 		SilenceUsage:  true,
 		SilenceErrors: false,
 	}
+	root.SetVersionTemplate("{{.Version}}\n")
 	root.AddCommand(newPlayCmd(), newListCmd(), newVerifyCmd())
 	return root
 }

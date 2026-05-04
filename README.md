@@ -164,6 +164,54 @@ Engine behavior:
 
 Adding a new runner is **docs + JSON** first, then (if helpful) a reference pack that uses it.
 
+## Install
+
+### macOS (Homebrew)
+
+```sh
+brew install icco/tap/bugsim
+```
+
+This installs the `bugsim` binary. The cask does not bundle problem packs;
+clone this repo for the seed packs and pass `--packs ./packs`, or point
+`--packs` at any directory of pack subdirectories.
+
+The cask's post-install hook runs `xattr -dr com.apple.quarantine` on the
+binary because release binaries are not yet Apple-notarized.
+
+### Other platforms
+
+- Pre-built `linux_amd64` / `linux_arm64` tarballs are attached to each
+  GitHub release.
+- From source: `go install github.com/icco/bugsim/cmd/bugsim@latest`.
+
+Running the implement track requires Docker on the host either way.
+
+## Releasing
+
+Releases are produced by [GoReleaser](https://goreleaser.com) on tag push:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The [`release` workflow](.github/workflows/release.yml) builds binaries for
+`darwin/{amd64,arm64}` and `linux/{amd64,arm64}`, attaches archives + checksums
+to a GitHub release, and pushes a Homebrew cask to
+[`icco/homebrew-tap`](https://github.com/icco/homebrew-tap).
+
+The release job needs one repo secret beyond the default `GITHUB_TOKEN`:
+
+| Secret | Permission | Why |
+|---|---|---|
+| `HOMEBREW_TAP_GITHUB_TOKEN` | fine-grained PAT, contents:write on `icco/homebrew-tap` | Default `GITHUB_TOKEN` cannot push to a different repository |
+
+To create it: GitHub Settings → Developer settings → Personal access tokens →
+Fine-grained tokens → repository access `icco/homebrew-tap` → Repository
+permissions: Contents `Read and write`. Add it to `icco/bugsim` under
+Settings → Secrets and variables → Actions.
+
 ## CLI UX (target)
 
 ```text
