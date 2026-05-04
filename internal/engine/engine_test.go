@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,6 +102,141 @@ func TestRunTestsPass(t *testing.T) {
 	}
 	if res.ExitCode != 0 {
 		t.Fatalf("expected pass, got exit=%d stderr=%s", res.ExitCode, res.Stderr)
+	}
+}
+
+func TestMaterializeBugReviewErrors(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "manifest.yaml"), `
+pack_format_version: 1
+id: demo-bug
+title: Demo
+track: bug_review
+difficulty: easy
+bug_review:
+  prompt: pick
+  choices:
+    - id: a
+      label: a
+      correct: true
+    - id: b
+      label: b
+      correct: false
+`)
+	writeFile(t, filepath.Join(dir, "problem.md"), "demo")
+	writeFile(t, filepath.Join(dir, "bug", "x.txt"), "x")
+	p, err := pack.Load(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	work := filepath.Join(t.TempDir(), "work")
+	if err := engine.MaterializeWorkspace(p, work); err == nil {
+		t.Fatal("expected error materialising a bug_review pack")
+	}
+}
+
+func TestMaterializeMissingSkeleton(t *testing.T) {
+	dir := t.TempDir()
+	// Bypass pack.Load so we can construct a pack pointing at a directory
+	// that lacks skeleton/ on disk and still try to materialise it.
+	p := &pack.Pack{
+		Dir: dir,
+		Manifest: pack.Manifest{
+			PackFormatVersion: 1,
+			ID:                "demo",
+			Title:             "Demo",
+			Track:             pack.TrackImplement,
+			Runner:            "go",
+			Difficulty:        pack.DifficultyEasy,
+		},
+	}
+	work := filepath.Join(t.TempDir(), "work")
+	if err := engine.MaterializeWorkspace(p, work); err == nil {
+		t.Fatal("expected error: skeleton/ is missing on disk")
+	}
+}
+
+func TestMaterializeReplacesExistingWorkspace(t *testing.T) {
+	p := newGoPack(t, "package demo\n\nfunc Add(a, b int) int { return a + b }\n")
+	work := filepath.Join(t.TempDir(), "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(work, "stale.txt")
+	if err := os.WriteFile(stale, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.MaterializeWorkspace(p, work); err != nil {
+		t.Fatalf("materialize: %v", err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale file should have been removed, got err=%v", err)
+	}
+}
+
+func TestMaterializeCollisionDetected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "manifest.yaml"), `
+pack_format_version: 1
+id: demo
+title: Demo
+track: implement
+runner: go
+difficulty: easy
+`)
+	writeFile(t, filepath.Join(dir, "problem.md"), "demo")
+	writeFile(t, filepath.Join(dir, "skeleton", "go.mod"), "module example.com/demo\n\ngo 1.22\n")
+	writeFile(t, filepath.Join(dir, "skeleton", "demo.go"), "package demo\n")
+	// Same path appears in both skeleton/ and hidden_tests/, which the engine
+	// must reject so authors notice the overlap.
+	writeFile(t, filepath.Join(dir, "hidden_tests", "demo.go"), "package demo\n")
+	p, err := pack.Load(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	work := filepath.Join(t.TempDir(), "work")
+	err = engine.MaterializeWorkspace(p, work)
+	if err == nil {
+		t.Fatal("expected collision error")
+	}
+	if !strings.Contains(err.Error(), "hidden_tests collides with skeleton") {
+		t.Fatalf("expected collision message, got: %v", err)
+	}
+}
+
+func TestDefaultLimits(t *testing.T) {
+	lim := engine.DefaultLimits()
+	if lim.Memory == "" || lim.CPUs == "" || lim.PIDsLimit <= 0 {
+		t.Fatalf("default limits should be set, got %+v", lim)
+	}
+}
+
+func TestRunTestsRejectsEmptyImage(t *testing.T) {
+	rdef := &runner.Definition{
+		ID:       "broken",
+		Network:  "none",
+		Commands: map[string][]string{"test": {"true"}},
+	}
+	work := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := engine.RunTests(ctx, work, rdef, engine.DefaultLimits()); err == nil {
+		t.Fatal("expected error: empty image")
+	}
+}
+
+func TestRunTestsRejectsEmptyCommand(t *testing.T) {
+	rdef := &runner.Definition{
+		ID:       "broken",
+		Image:    "alpine:3",
+		Network:  "none",
+		Commands: map[string][]string{"test": {}},
+	}
+	work := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := engine.RunTests(ctx, work, rdef, engine.DefaultLimits()); err == nil {
+		t.Fatal("expected error: empty command")
 	}
 }
 

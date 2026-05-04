@@ -1,0 +1,9 @@
+pack_format_version: 1
+
+id: ts-list-utils
+title: List utilities (TypeScript) — the lodash bug tour
+track: implement
+runner: typescript
+difficulty: medium
+tags: [typescript, arrays, edge-cases]
+recommended_minutes: 12

@@ -196,6 +196,28 @@ func (p *Pack) Validate() error {
 	return nil
 }
 
+// corpusExts is the allow-list of file extensions concatenated by
+// ReadBugCorpus. Update it (and a test) when adding support for new pack
+// languages.
+var corpusExts = map[string]struct{}{
+	".md":   {},
+	".txt":  {},
+	".go":   {},
+	".json": {},
+	".yaml": {},
+	".yml":  {},
+	".ts":   {},
+	".tsx":  {},
+	".js":   {},
+	".mjs":  {},
+	".cjs":  {},
+}
+
+func isCorpusExt(ext string) bool {
+	_, ok := corpusExts[strings.ToLower(ext)]
+	return ok
+}
+
 func requireDir(path string) error {
 	st, err := os.Stat(path)
 	if err != nil {
@@ -230,8 +252,7 @@ func (p *Pack) ReadBugCorpus() (string, error) {
 		if d.IsDir() {
 			return nil
 		}
-		ext := strings.ToLower(filepath.Ext(path))
-		if ext != ".md" && ext != ".txt" && ext != ".go" && ext != ".json" && ext != ".yaml" && ext != ".yml" {
+		if !isCorpusExt(filepath.Ext(path)) {
 			return nil
 		}
 		rel, err := filepath.Rel(root, path)

@@ -1,0 +1,9 @@
+pack_format_version: 1
+
+id: ts-validate-input
+title: Email + phone validation (TypeScript) — the realistic version
+track: implement
+runner: typescript
+difficulty: hard
+tags: [typescript, validation, email, phone]
+recommended_minutes: 15

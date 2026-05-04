@@ -1,0 +1,9 @@
+pack_format_version: 1
+
+id: go-slice-utils
+title: Slice utilities (Go) — backing-array safety
+track: implement
+runner: go
+difficulty: hard
+tags: [go, slices, generics, append, aliasing]
+recommended_minutes: 18
