@@ -1,6 +1,8 @@
+// Package runner loads runner definitions from embedded JSON.
 package runner
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,7 +37,9 @@ func Load(id string) (*Definition, error) {
 		return nil, err
 	}
 	var d Definition
-	if err := json.Unmarshal(raw, &d); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&d); err != nil {
 		return nil, fmt.Errorf("parse runner %s: %w", name, err)
 	}
 	if d.ID != id {

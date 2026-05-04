@@ -1,107 +1,107 @@
+// Command bugsim is a terminal flight simulator for software engineers.
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/spf13/cobra"
 
 	"github.com/icco/bugsim/internal/pack"
 	"github.com/icco/bugsim/internal/tui"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		usage(os.Stderr)
-		os.Exit(2)
-	}
-	switch os.Args[1] {
-	case "play":
-		os.Exit(cmdPlay(os.Args[2:]))
-	case "list":
-		os.Exit(cmdList(os.Args[2:]))
-	case "verify-pack":
-		os.Exit(cmdVerifyPack(os.Args[2:]))
-	case "-h", "--help", "help":
-		usage(os.Stdout)
-		return
-	default:
-		usage(os.Stderr)
-		os.Exit(2)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	if err := newRootCmd().ExecuteContext(ctx); err != nil {
+		os.Exit(1)
 	}
 }
 
-func usage(w *os.File) {
-	fmt.Fprintf(w, `bugsim — terminal flight simulator for software engineers
-
-usage:
-  bugsim play [--packs DIR] [--timeout DUR]
-  bugsim list [--packs DIR]
-  bugsim verify-pack PACK_DIR
-`)
+func newRootCmd() *cobra.Command {
+	root := &cobra.Command{
+		Use:           "bugsim",
+		Short:         "Terminal flight simulator for software engineers",
+		Long:          "bugsim runs short, repeatable practice scenarios for implementation and debugging skills.",
+		SilenceUsage:  true,
+		SilenceErrors: false,
+	}
+	root.AddCommand(newPlayCmd(), newListCmd(), newVerifyCmd())
+	return root
 }
 
-func cmdPlay(args []string) int {
-	fs := flag.NewFlagSet("play", flag.ContinueOnError)
-	packsDir := fs.String("packs", "./packs", "directory containing pack subdirectories")
-	timeout := fs.Duration("timeout", 2*time.Minute, "per-test subprocess timeout")
-	if err := fs.Parse(args); err != nil {
-		return 2
+func newPlayCmd() *cobra.Command {
+	var packsDir string
+	var timeout time.Duration
+	cmd := &cobra.Command{
+		Use:   "play",
+		Short: "Open the interactive TUI",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			abs, err := filepath.Abs(packsDir)
+			if err != nil {
+				return err
+			}
+			if _, err := os.Stat(abs); err != nil {
+				return fmt.Errorf("packs dir: %w", err)
+			}
+			m, err := tui.New(tui.Config{PacksDir: abs, Timeout: timeout})
+			if err != nil {
+				return err
+			}
+			prog := tea.NewProgram(m, tea.WithContext(cmd.Context()))
+			_, err = prog.Run()
+			return err
+		},
 	}
-	if _, err := os.Stat(*packsDir); err != nil {
-		fmt.Fprintf(os.Stderr, "packs dir: %v\n", err)
-		return 1
-	}
-	abs, _ := filepath.Abs(*packsDir)
-	m, err := tui.New(tui.Config{PacksDir: abs, Timeout: *timeout})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "init: %v\n", err)
-		return 1
-	}
-	prog := tea.NewProgram(m)
-	if _, err := prog.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "tui: %v\n", err)
-		return 1
-	}
-	return 0
+	cmd.Flags().StringVar(&packsDir, "packs", "./packs", "directory containing pack subdirectories")
+	cmd.Flags().DurationVar(&timeout, "timeout", 2*time.Minute, "per-test subprocess timeout")
+	return cmd
 }
 
-func cmdList(args []string) int {
-	fs := flag.NewFlagSet("list", flag.ContinueOnError)
-	packsDir := fs.String("packs", "./packs", "directory containing pack subdirectories")
-	if err := fs.Parse(args); err != nil {
-		return 2
+func newListCmd() *cobra.Command {
+	var packsDir string
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List discovered packs",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			summaries, err := pack.Discover(packsDir)
+			if err != nil {
+				return fmt.Errorf("discover: %w", err)
+			}
+			if len(summaries) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "no packs found.")
+				return nil
+			}
+			sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
+			for _, s := range summaries {
+				fmt.Fprintf(cmd.OutOrStdout(), "%-30s  %-12s  %s\n", s.ID, s.Track, s.Title)
+			}
+			return nil
+		},
 	}
-	summaries, err := pack.Discover(*packsDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "discover: %v\n", err)
-		return 1
-	}
-	if len(summaries) == 0 {
-		fmt.Println("no packs found.")
-		return 0
-	}
-	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
-	for _, s := range summaries {
-		fmt.Printf("%-30s  %-12s  %s\n", s.ID, s.Track, s.Title)
-	}
-	return 0
+	cmd.Flags().StringVar(&packsDir, "packs", "./packs", "directory containing pack subdirectories")
+	return cmd
 }
 
-func cmdVerifyPack(args []string) int {
-	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: bugsim verify-pack PACK_DIR")
-		return 2
+func newVerifyCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "verify-pack PACK_DIR",
+		Short: "Validate a pack manifest and on-disk layout",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p, err := pack.Load(args[0])
+			if err != nil {
+				return fmt.Errorf("invalid: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "ok: %s (%s, runner=%s)\n", p.Manifest.ID, p.Manifest.Track, p.Manifest.Runner)
+			return nil
+		},
 	}
-	p, err := pack.Load(args[0])
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid: %v\n", err)
-		return 1
-	}
-	fmt.Printf("ok: %s (%s, runner=%s)\n", p.Manifest.ID, p.Manifest.Track, p.Manifest.Runner)
-	return 0
 }

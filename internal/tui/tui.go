@@ -1,3 +1,4 @@
+// Package tui implements the Bubble Tea program for bugsim.
 package tui
 
 import (
@@ -5,12 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/viewport"
+	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/icco/bugsim/internal/engine"
@@ -33,35 +38,77 @@ const (
 	screenResult
 )
 
+type keyMap struct {
+	Up      key.Binding
+	Down    key.Binding
+	Enter   key.Binding
+	Back    key.Binding
+	Run     key.Binding
+	Quit    key.Binding
+	Help    key.Binding
+	Choice1 key.Binding
+}
+
+func defaultKeyMap() keyMap {
+	return keyMap{
+		Up:      key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+		Down:    key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
+		Enter:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select/submit")),
+		Back:    key.NewBinding(key.WithKeys("esc", "b"), key.WithHelp("esc", "back")),
+		Run:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "run tests")),
+		Quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Help:    key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+		Choice1: key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9"), key.WithHelp("1-9", "choose")),
+	}
+}
+
+// ShortHelp implements help.KeyMap.
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Up, k.Down, k.Enter, k.Back, k.Help, k.Quit}
+}
+
+// FullHelp implements help.KeyMap.
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down, k.Enter},
+		{k.Back, k.Run, k.Choice1},
+		{k.Help, k.Quit},
+	}
+}
+
+type packItem struct {
+	summary pack.Summary
+}
+
+func (p packItem) Title() string       { return p.summary.Title }
+func (p packItem) Description() string { return fmt.Sprintf("%s · %s", p.summary.ID, p.summary.Track) }
+func (p packItem) FilterValue() string { return p.summary.Title + " " + p.summary.ID }
+
 type model struct {
 	cfg      Config
-	packs    []pack.Summary
-	cursor   int
-	width    int
-	height   int
+	keys     keyMap
+	help     help.Model
 	screen   screen
 	err      error
 	quitting bool
 
-	current   *pack.Pack
-	problemMD string
+	packsList list.Model
+	body      viewport.Model
+	renderer  *glamour.TermRenderer
 
-	// implement
+	current *pack.Pack
 	workDir string
 	running bool
 	result  *engine.TestResult
 
-	// bug review
-	bugCorpus string
 	choice    int
 	answered  bool
 	correct   bool
 	revealLbl string
-
-	status string
+	status    string
 }
 
-// New returns a Bubble Tea program model.
+// New constructs a Bubble Tea model rooted at the given packs dir.
 func New(cfg Config) (tea.Model, error) {
 	if cfg.PacksDir == "" {
 		return nil, errors.New("packs dir is required")
@@ -69,12 +116,39 @@ func New(cfg Config) (tea.Model, error) {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 2 * time.Minute
 	}
+
 	summaries, err := pack.Discover(cfg.PacksDir)
 	if err != nil {
 		return nil, err
 	}
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
-	return &model{cfg: cfg, packs: summaries}, nil
+
+	items := make([]list.Item, 0, len(summaries))
+	for _, s := range summaries {
+		items = append(items, packItem{summary: s})
+	}
+
+	delegate := list.NewDefaultDelegate()
+	l := list.New(items, delegate, 0, 0)
+	l.Title = "bugsim"
+	l.SetStatusBarItemName("pack", "packs")
+
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(80),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("init markdown renderer: %w", err)
+	}
+
+	return &model{
+		cfg:       cfg,
+		keys:      defaultKeyMap(),
+		help:      help.New(),
+		packsList: l,
+		body:      viewport.New(),
+		renderer:  r,
+	}, nil
 }
 
 func (m *model) Init() tea.Cmd { return nil }
@@ -109,11 +183,12 @@ func (m *model) runTestsCmd() tea.Cmd {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		m.help.SetWidth(msg.Width)
+		m.packsList.SetSize(msg.Width, msg.Height-1)
+		m.body.SetWidth(msg.Width)
+		m.body.SetHeight(max(1, msg.Height-bodyChromeHeight()))
 		return m, nil
-	case tea.KeyPressMsg:
-		return m.onKey(msg)
+
 	case testsDoneMsg:
 		m.running = false
 		if msg.err != nil {
@@ -128,55 +203,52 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = fmt.Sprintf("tests failed (exit %d)", msg.res.ExitCode)
 		}
+		m.body.SetContent(formatResult(msg.res))
 		return m, nil
+
+	case tea.KeyPressMsg:
+		return m.onKey(msg)
 	}
 	return m, nil
 }
 
 func (m *model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	key := k.String()
-
-	if key == "ctrl+c" || (m.screen == screenList && key == "q") {
+	switch {
+	case key.Matches(k, m.keys.Quit):
+		// Don't intercept quit when filter input is active.
+		if m.screen == screenList && m.packsList.FilterState() == list.Filtering {
+			break
+		}
 		m.quitting = true
 		return m, tea.Quit
+
+	case key.Matches(k, m.keys.Help):
+		m.help.ShowAll = !m.help.ShowAll
+		return m, nil
 	}
 
 	switch m.screen {
 	case screenList:
-		return m.onListKey(key)
+		return m.onListKey(k)
 	case screenImplement:
-		return m.onImplementKey(key)
+		return m.onImplementKey(k)
 	case screenBugReview:
-		return m.onBugReviewKey(key)
+		return m.onBugReviewKey(k)
 	case screenResult:
-		switch key {
-		case "enter", "esc", "backspace", "b":
-			return m.backToProblem()
-		case "q":
-			m.quitting = true
-			return m, tea.Quit
-		}
+		return m.onResultKey(k)
 	}
 	return m, nil
 }
 
-func (m *model) onListKey(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
+func (m *model) onListKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(k, m.keys.Enter) && m.packsList.FilterState() != list.Filtering {
+		if it, ok := m.packsList.SelectedItem().(packItem); ok {
+			return m.openPack(it.summary)
 		}
-	case "down", "j":
-		if m.cursor < len(m.packs)-1 {
-			m.cursor++
-		}
-	case "enter":
-		if len(m.packs) == 0 {
-			return m, nil
-		}
-		return m.openPack(m.packs[m.cursor])
 	}
-	return m, nil
+	var cmd tea.Cmd
+	m.packsList, cmd = m.packsList.Update(k)
+	return m, cmd
 }
 
 func (m *model) openPack(s pack.Summary) (tea.Model, tea.Cmd) {
@@ -190,8 +262,12 @@ func (m *model) openPack(s pack.Summary) (tea.Model, tea.Cmd) {
 		m.err = err
 		return m, nil
 	}
+	rendered, err := m.renderer.Render(md)
+	if err != nil {
+		rendered = md
+	}
+
 	m.current = p
-	m.problemMD = md
 	m.result = nil
 	m.err = nil
 	m.answered = false
@@ -199,6 +275,7 @@ func (m *model) openPack(s pack.Summary) (tea.Model, tea.Cmd) {
 	m.revealLbl = ""
 	m.choice = 0
 	m.status = ""
+
 	switch p.Manifest.Track {
 	case pack.TrackImplement:
 		tmp, err := os.MkdirTemp("", fmt.Sprintf("bugsim-%s-", p.Manifest.ID))
@@ -207,6 +284,8 @@ func (m *model) openPack(s pack.Summary) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.workDir = tmp
+		m.body.SetContent(rendered)
+		m.body.GotoTop()
 		m.screen = screenImplement
 	case pack.TrackBugReview:
 		corpus, err := p.ReadBugCorpus()
@@ -214,46 +293,46 @@ func (m *model) openPack(s pack.Summary) (tea.Model, tea.Cmd) {
 			m.err = err
 			return m, nil
 		}
-		m.bugCorpus = corpus
+		m.body.SetContent(rendered + "\n\n" + corpus)
+		m.body.GotoTop()
 		m.screen = screenBugReview
 	}
 	return m, nil
 }
 
-func (m *model) onImplementKey(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case "esc", "b":
+func (m *model) onImplementKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(k, m.keys.Back):
 		return m.backToList(), nil
-	case "r":
+	case key.Matches(k, m.keys.Run):
 		if m.running {
 			return m, nil
 		}
 		m.running = true
 		m.status = "running tests..."
 		return m, m.runTestsCmd()
-	case "w":
-		m.status = "workspace: " + m.workDir
 	}
-	return m, nil
+	var cmd tea.Cmd
+	m.body, cmd = m.body.Update(k)
+	return m, cmd
 }
 
-func (m *model) onBugReviewKey(key string) (tea.Model, tea.Cmd) {
+func (m *model) onBugReviewKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	br := m.current.Manifest.BugReview
-	if br == nil {
-		return m, nil
-	}
-	switch key {
-	case "esc", "b":
+	switch {
+	case key.Matches(k, m.keys.Back):
 		return m.backToList(), nil
-	case "up", "k":
+	case key.Matches(k, m.keys.Up):
 		if m.choice > 0 {
 			m.choice--
 		}
-	case "down", "j":
+		return m, nil
+	case key.Matches(k, m.keys.Down):
 		if m.choice < len(br.Choices)-1 {
 			m.choice++
 		}
-	case "enter":
+		return m, nil
+	case key.Matches(k, m.keys.Enter):
 		if m.answered {
 			return m.backToList(), nil
 		}
@@ -273,31 +352,42 @@ func (m *model) onBugReviewKey(key string) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = "incorrect"
 		}
-	}
-	// numeric shortcut 1..9
-	if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
-		idx := int(key[0] - '1')
-		if idx < len(br.Choices) {
+		return m, nil
+	case key.Matches(k, m.keys.Choice1):
+		idx := int(k.String()[0] - '1')
+		if idx >= 0 && idx < len(br.Choices) {
 			m.choice = idx
 		}
+		return m, nil
 	}
-	return m, nil
+	var cmd tea.Cmd
+	m.body, cmd = m.body.Update(k)
+	return m, cmd
 }
 
-func (m *model) backToProblem() (tea.Model, tea.Cmd) {
-	switch m.current.Manifest.Track {
-	case pack.TrackImplement:
-		m.screen = screenImplement
-	case pack.TrackBugReview:
-		m.screen = screenBugReview
+func (m *model) onResultKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(k, m.keys.Back), key.Matches(k, m.keys.Enter):
+		switch m.current.Manifest.Track {
+		case pack.TrackImplement:
+			m.screen = screenImplement
+		case pack.TrackBugReview:
+			m.screen = screenBugReview
+		}
+		return m, nil
 	}
-	return m, nil
+	var cmd tea.Cmd
+	m.body, cmd = m.body.Update(k)
+	return m, cmd
 }
 
 func (m *model) backToList() *model {
 	m.screen = screenList
+	if m.workDir != "" && strings.Contains(m.workDir, "bugsim-") {
+		_ = os.RemoveAll(m.workDir)
+		m.workDir = ""
+	}
 	m.current = nil
-	m.problemMD = ""
 	m.result = nil
 	m.err = nil
 	m.status = ""
@@ -310,10 +400,9 @@ var (
 	okStyle     = lipgloss.NewStyle().Bold(true)
 	errStyle    = lipgloss.NewStyle().Bold(true)
 	cursorStyle = lipgloss.NewStyle().Bold(true)
-	boxStyle    = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			Padding(0, 1)
 )
+
+func bodyChromeHeight() int { return 6 }
 
 func (m *model) View() tea.View {
 	if m.quitting {
@@ -322,7 +411,7 @@ func (m *model) View() tea.View {
 	var body string
 	switch m.screen {
 	case screenList:
-		body = m.viewList()
+		body = m.packsList.View()
 	case screenImplement:
 		body = m.viewImplement()
 	case screenBugReview:
@@ -333,57 +422,26 @@ func (m *model) View() tea.View {
 	return tea.View{Content: body, AltScreen: true}
 }
 
-func (m *model) viewList() string {
-	var b strings.Builder
-	b.WriteString(headerStyle.Render("bugsim"))
-	b.WriteString("\n")
-	b.WriteString(dimStyle.Render(fmt.Sprintf("packs dir: %s", m.cfg.PacksDir)))
-	b.WriteString("\n\n")
-	if len(m.packs) == 0 {
-		b.WriteString("no packs discovered.\n")
-		b.WriteString(dimStyle.Render("place pack directories under --packs and run again.\n"))
-	} else {
-		for i, p := range m.packs {
-			line := fmt.Sprintf("  %s  [%s]  %s", p.ID, p.Track, p.Title)
-			if i == m.cursor {
-				line = cursorStyle.Render("> " + strings.TrimPrefix(line, "  "))
-			}
-			b.WriteString(line)
-			b.WriteString("\n")
-		}
-	}
-	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("enter: open   up/down or j/k: move   q: quit"))
-	if m.err != nil {
-		b.WriteString("\n")
-		b.WriteString(errStyle.Render("error: " + m.err.Error()))
-	}
-	return b.String()
-}
-
 func (m *model) viewImplement() string {
 	var b strings.Builder
 	b.WriteString(headerStyle.Render(m.current.Manifest.Title))
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render(fmt.Sprintf("track: implement   runner: %s   difficulty: %s", m.current.Manifest.Runner, m.current.Manifest.Difficulty)))
+	b.WriteString(dimStyle.Render(fmt.Sprintf("track: implement   runner: %s   difficulty: %s",
+		m.current.Manifest.Runner, m.current.Manifest.Difficulty)))
 	b.WriteString("\n\n")
-	b.WriteString(m.problemMD)
-	b.WriteString("\n\n")
-	b.WriteString(boxStyle.Render(fmt.Sprintf("workspace: %s", m.workDir)))
-	b.WriteString("\n\n")
-	b.WriteString(dimStyle.Render("r: run tests   w: show workspace path   esc/b: back   q: quit"))
+	b.WriteString(m.body.View())
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render(fmt.Sprintf("workspace: %s", m.workDir)))
+	b.WriteString("\n")
 	if m.running {
-		b.WriteString("\n")
-		b.WriteString("running tests...")
-	}
-	if m.status != "" && !m.running {
-		b.WriteString("\n")
-		b.WriteString(m.status)
+		b.WriteString("running tests...\n")
+	} else if m.status != "" {
+		b.WriteString(m.status + "\n")
 	}
 	if m.err != nil {
-		b.WriteString("\n")
-		b.WriteString(errStyle.Render("error: " + m.err.Error()))
+		b.WriteString(errStyle.Render("error: "+m.err.Error()) + "\n")
 	}
+	b.WriteString(m.help.View(m.keys))
 	return b.String()
 }
 
@@ -394,10 +452,8 @@ func (m *model) viewBugReview() string {
 	b.WriteString("\n")
 	b.WriteString(dimStyle.Render(fmt.Sprintf("track: bug review   difficulty: %s", m.current.Manifest.Difficulty)))
 	b.WriteString("\n\n")
-	b.WriteString(m.problemMD)
-	b.WriteString("\n\n")
-	b.WriteString(boxStyle.Render(m.bugCorpus))
-	b.WriteString("\n\n")
+	b.WriteString(m.body.View())
+	b.WriteString("\n")
 	b.WriteString(headerStyle.Render(br.Prompt))
 	b.WriteString("\n")
 	for i, c := range br.Choices {
@@ -409,68 +465,57 @@ func (m *model) viewBugReview() string {
 		if i == m.choice {
 			line = cursorStyle.Render(line)
 		}
-		b.WriteString(line)
-		b.WriteString("\n")
+		b.WriteString(line + "\n")
 	}
-	b.WriteString("\n")
 	if m.answered {
 		if m.correct {
-			b.WriteString(okStyle.Render("correct."))
+			b.WriteString("\n" + okStyle.Render("correct.") + "\n")
 		} else {
-			b.WriteString(errStyle.Render("incorrect."))
+			b.WriteString("\n" + errStyle.Render("incorrect."))
 			if m.revealLbl != "" {
 				b.WriteString(" expected: " + m.revealLbl)
 			}
+			b.WriteString("\n")
 		}
-		b.WriteString("\n\n")
-		b.WriteString(dimStyle.Render("enter: back to list   q: quit"))
-	} else {
-		b.WriteString(dimStyle.Render("1-9 or up/down: choose   enter: submit   esc/b: back   q: quit"))
 	}
+	b.WriteString(m.help.View(m.keys))
 	return b.String()
 }
 
 func (m *model) viewResult() string {
 	var b strings.Builder
-	title := m.current.Manifest.Title
-	b.WriteString(headerStyle.Render(title + " — results"))
-	b.WriteString("\n\n")
-	if m.result == nil {
-		b.WriteString("no result.\n")
-	} else {
+	b.WriteString(headerStyle.Render(m.current.Manifest.Title + " — results"))
+	b.WriteString("\n")
+	if m.result != nil {
 		if m.result.ExitCode == 0 {
 			b.WriteString(okStyle.Render("PASS"))
 		} else {
 			b.WriteString(errStyle.Render(fmt.Sprintf("FAIL (exit %d)", m.result.ExitCode)))
 		}
-		b.WriteString("\n\n")
-		if strings.TrimSpace(m.result.Stdout) != "" {
-			b.WriteString(headerStyle.Render("stdout"))
-			b.WriteString("\n")
-			b.WriteString(m.result.Stdout)
-			b.WriteString("\n")
-		}
-		if strings.TrimSpace(m.result.Stderr) != "" {
-			b.WriteString(headerStyle.Render("stderr"))
-			b.WriteString("\n")
-			b.WriteString(m.result.Stderr)
-			b.WriteString("\n")
-		}
 	}
+	b.WriteString("\n\n")
+	b.WriteString(m.body.View())
 	b.WriteString("\n")
 	b.WriteString(dimStyle.Render(fmt.Sprintf("workspace: %s", m.workDir)))
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("enter/b: back to problem   q: quit"))
+	b.WriteString(m.help.View(m.keys))
 	return b.String()
 }
 
-// MustCleanup removes a workspace directory, ignoring errors.
-func MustCleanup(workDir string) {
-	if workDir == "" {
-		return
+func formatResult(r *engine.TestResult) string {
+	if r == nil {
+		return "no result."
 	}
-	if !strings.Contains(filepath.Base(workDir), "bugsim-") {
-		return
+	var b strings.Builder
+	if s := strings.TrimRight(r.Stdout, "\n"); s != "" {
+		b.WriteString("stdout\n")
+		b.WriteString(s)
+		b.WriteString("\n\n")
 	}
-	_ = os.RemoveAll(workDir)
+	if s := strings.TrimRight(r.Stderr, "\n"); s != "" {
+		b.WriteString("stderr\n")
+		b.WriteString(s)
+		b.WriteString("\n")
+	}
+	return b.String()
 }

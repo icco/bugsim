@@ -96,7 +96,7 @@ Additional required layout:
 | Path | Purpose |
 |------|---------|
 | `skeleton/**` | Copied verbatim into the run workspace (should include everything needed to `go test`, `pytest`, etc., depending on runner) |
-| `hidden_tests/**` | Copied verbatim into the same workspace root **after** `skeleton/` (overwrites on collision—avoid collisions) |
+| `hidden_tests/**` | Copied verbatim into the same workspace root **after** `skeleton/`. File-name collisions between the two trees are reported as errors (`errors.Is(err, fs.ErrExist)`); rename to keep the trees disjoint. |
 
 Optional:
 
