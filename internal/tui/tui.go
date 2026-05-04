@@ -283,8 +283,12 @@ func matchingPool(summaries []pack.Summary, language string, difficulty pack.Dif
 }
 
 type testsDoneMsg struct {
-	res *engine.TestResult
-	err error
+	// packID identifies the pack that was running when the command was
+	// dispatched. The TUI uses it to ignore late results from a pack the
+	// user has already navigated away from.
+	packID string
+	res    *engine.TestResult
+	err    error
 }
 
 func (m *model) runTestsCmd() tea.Cmd {
@@ -294,18 +298,18 @@ func (m *model) runTestsCmd() tea.Cmd {
 	return func() tea.Msg {
 		rdef, err := runner.Load(p.Manifest.Runner)
 		if err != nil {
-			return testsDoneMsg{err: err}
+			return testsDoneMsg{packID: p.Manifest.ID, err: err}
 		}
 		if err := engine.MaterializeWorkspace(p, workDir); err != nil {
-			return testsDoneMsg{err: err}
+			return testsDoneMsg{packID: p.Manifest.ID, err: err}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		if err := engine.EnsureDocker(ctx); err != nil {
-			return testsDoneMsg{err: err}
+			return testsDoneMsg{packID: p.Manifest.ID, err: err}
 		}
 		res, err := engine.RunTests(ctx, workDir, rdef, engine.DefaultLimits())
-		return testsDoneMsg{res: res, err: err}
+		return testsDoneMsg{packID: p.Manifest.ID, res: res, err: err}
 	}
 }
 
@@ -320,6 +324,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case testsDoneMsg:
+		// If the user navigated to a different pack while tests were
+		// running, drop the result on the floor. Without this guard the
+		// TUI would either panic on m.current.Manifest.* or paint stale
+		// output on top of the new pack.
+		if m.current == nil || m.current.Manifest.ID != msg.packID {
+			return m, nil
+		}
 		m.running = false
 		if msg.err != nil {
 			m.err = msg.err
@@ -459,6 +470,7 @@ func (m *model) openPack(s pack.Summary) {
 	m.revealLbl = ""
 	m.choice = 0
 	m.status = ""
+	m.running = false
 
 	switch p.Manifest.Track {
 	case pack.TrackImplement:
@@ -559,15 +571,28 @@ func (m *model) onResultKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(k, m.keys.Languages):
 		return m.backToLanguage(), nil
 	case key.Matches(k, m.keys.Back):
-		// Return to the playable view of the current pack so the user
-		// can re-run after editing.
-		switch m.current.Manifest.Track {
-		case pack.TrackImplement:
-			m.screen = screenImplement
-		case pack.TrackBugReview:
-			m.screen = screenBugReview
+		return m.backToDifficulty(), nil
+	case key.Matches(k, m.keys.Run):
+		// Re-run tests against the same workspace (useful if the user
+		// edited skeleton files in another window between runs).
+		if m.running || m.current == nil {
+			return m, nil
 		}
-		return m, nil
+		m.running = true
+		m.status = "running tests..."
+		m.screen = screenImplement
+		// Restore the problem markdown — formatResult had taken over
+		// the body when the previous run finished.
+		md, err := m.current.ReadProblemMarkdown()
+		if err == nil {
+			rendered, rerr := m.renderer.Render(md)
+			if rerr != nil {
+				rendered = md
+			}
+			m.body.SetContent(rendered)
+			m.body.GotoTop()
+		}
+		return m, m.runTestsCmd()
 	case key.Matches(k, m.keys.Enter), key.Matches(k, m.keys.Next):
 		return m, m.openRandomPack()
 	}
@@ -585,6 +610,7 @@ func (m *model) backToDifficulty() *model {
 	m.result = nil
 	m.err = nil
 	m.status = ""
+	m.running = false
 	m.screen = screenDifficulty
 	m.difficultiesList.SetItems(buildDifficultyItems(m.summaries, m.language))
 	return m
@@ -597,6 +623,7 @@ func (m *model) backToLanguage() *model {
 	m.result = nil
 	m.err = nil
 	m.status = ""
+	m.running = false
 	m.language = ""
 	m.difficulty = ""
 	m.pool = nil
@@ -757,7 +784,7 @@ func (m *model) viewResult() string {
 	b.WriteString("\n")
 	b.WriteString(dimStyle.Render(fmt.Sprintf("workspace: %s", m.workDir)))
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("[enter/n] next random  [b] back to pack  [esc/L] change language") + "\n")
+	b.WriteString(dimStyle.Render("[enter/n] next random  [r] re-run tests  [esc] change difficulty  [L] change language") + "\n")
 	b.WriteString(m.help.View(m.keys))
 	return b.String()
 }

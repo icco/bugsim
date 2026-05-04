@@ -272,6 +272,169 @@ func TestNextRandomPackAvoidsImmediateRepeat(t *testing.T) {
 	}
 }
 
+// TestStaleTestsDoneMsgIgnored simulates the bug we'd hit if a user
+// navigated away from a pack while a docker run was in flight: the late
+// testsDoneMsg should not paint stale stdout over a different pack (or
+// crash on a nil m.current).
+func TestStaleTestsDoneMsgIgnored(t *testing.T) {
+	root := t.TempDir()
+	writePack(t, root, "go-1", "go", "implement", "easy")
+	writePack(t, root, "go-2", "go", "implement", "easy")
+
+	m := newTestModel(t, root)
+	m.Update(keypress("enter")) // language go
+	m.Update(keypress("enter")) // difficulty easy
+	if m.current == nil {
+		t.Fatal("expected a pack to be opened")
+	}
+	stalePackID := m.current.Manifest.ID
+	// Start a fictitious run, then have the user immediately back out.
+	m.running = true
+	m.Update(keypress("esc"))
+	if m.current != nil {
+		t.Fatal("expected back to clear current pack")
+	}
+	// Late message arrives — must be a no-op.
+	res := newModelMessage(m, testsDoneMsg{packID: stalePackID, res: nil, err: nil})
+	if res.screen != screenDifficulty {
+		t.Fatalf("expected to stay on difficulty screen, got %d", res.screen)
+	}
+}
+
+// TestRunningResetWhenSwitchingPacks ensures the "running tests..."
+// indicator doesn't bleed into the next pack when the user advances
+// before the previous run reports back.
+func TestRunningResetWhenSwitchingPacks(t *testing.T) {
+	root := t.TempDir()
+	writePack(t, root, "go-1", "go", "implement", "easy")
+	writePack(t, root, "go-2", "go", "implement", "easy")
+
+	m := newTestModel(t, root)
+	m.Update(keypress("enter"))
+	m.Update(keypress("enter"))
+	m.running = true
+	m.Update(keypress("n")) // user advances mid-run from screenImplement?
+	// 'n' isn't bound on screenImplement so it falls through to viewport;
+	// drive openRandomPack manually instead to simulate the result-screen
+	// path.
+	m.openRandomPack()
+	if m.running {
+		t.Fatal("running flag must reset when a new pack is opened")
+	}
+}
+
+// TestResultBackGoesToDifficulty asserts that pressing esc on the
+// result screen takes the user to the difficulty picker (not into a
+// stale "back to pack" view that still has stdout in the body).
+func TestResultBackGoesToDifficulty(t *testing.T) {
+	root := t.TempDir()
+	writePack(t, root, "go-1", "go", "implement", "easy")
+
+	m := newTestModel(t, root)
+	m.Update(keypress("enter")) // language
+	m.Update(keypress("enter")) // difficulty
+	// Pretend tests just finished.
+	m.screen = screenResult
+	m.result = nil
+	m.Update(keypress("esc"))
+	if m.screen != screenDifficulty {
+		t.Fatalf("esc on result should land on difficulty, got %d", m.screen)
+	}
+}
+
+// TestBugReviewIncorrectAdvancesAfterAnswer makes sure picking the wrong
+// MCQ option still shows the expected answer label and lets the user
+// move on with enter/n.
+func TestBugReviewIncorrectAdvancesAfterAnswer(t *testing.T) {
+	root := t.TempDir()
+	writePack(t, root, "br-1", "go", "bug_review", "easy")
+	writePack(t, root, "br-2", "go", "bug_review", "easy")
+
+	m := newTestModel(t, root)
+	m.Update(keypress("enter")) // language
+	m.Update(keypress("enter")) // difficulty
+	if m.screen != screenBugReview {
+		t.Fatalf("expected bug review screen, got %d", m.screen)
+	}
+	// Move cursor to the second (incorrect) choice and submit.
+	m.Update(keypress("down"))
+	m.Update(keypress("enter"))
+	if !m.answered {
+		t.Fatal("expected answered to be true after submission")
+	}
+	if m.correct {
+		t.Fatal("second choice should be incorrect for the test fixture")
+	}
+	if m.revealLbl == "" {
+		t.Fatal("revealLbl should be populated when answer is incorrect")
+	}
+	prev := m.current.Manifest.ID
+	m.Update(keypress("n"))
+	if m.current.Manifest.ID == prev {
+		t.Fatal("'n' should advance to the other matching pack")
+	}
+}
+
+// newModelMessage drives the model's Update and returns the post-state.
+func newModelMessage(m *model, msg tea.Msg) *model {
+	upd, _ := m.Update(msg)
+	mm, _ := upd.(*model)
+	if mm == nil {
+		return m
+	}
+	return mm
+}
+
+// TestViewSmokeAcrossScreens drives the model through every screen
+// transition and renders View() at each step. The intent is to catch
+// nil-pointer panics or empty-string crashes when one of the screens
+// dereferences an unset field (e.g. m.current).
+func TestViewSmokeAcrossScreens(t *testing.T) {
+	root := t.TempDir()
+	writePack(t, root, "go-easy-bug", "go", "bug_review", "easy")
+	writePack(t, root, "go-easy-impl", "go", "implement", "easy")
+
+	m := newTestModel(t, root)
+	steps := []string{
+		"language",
+		"language enter",
+		"difficulty enter",
+		"opened pack",
+	}
+	for _, step := range steps {
+		v := m.View()
+		if v.Content == "" {
+			t.Fatalf("View at %q returned empty content", step)
+		}
+		switch step {
+		case "language":
+			m.Update(keypress("enter"))
+		case "language enter":
+			m.Update(keypress("enter"))
+		case "difficulty enter":
+			// On the opened pack screen now.
+		}
+	}
+	// After answering an MCQ pack, View() should render the reveal text
+	// without panicking.
+	if m.screen == screenBugReview {
+		m.Update(keypress("enter"))
+		v := m.View()
+		if v.Content == "" {
+			t.Fatal("View on answered bug_review returned empty content")
+		}
+	}
+	// Force the result screen with a mock result so we hit viewResult.
+	m.screen = screenResult
+	if m.current == nil {
+		m.current = &pack.Pack{Manifest: pack.Manifest{Title: "x", ID: "x"}}
+	}
+	v := m.View()
+	if v.Content == "" {
+		t.Fatal("View on result screen returned empty content")
+	}
+}
+
 // TestLanguageDisplay ensures runner ids show up with friendly casing
 // in the picker (and that unknown ids fall back to the raw id).
 func TestLanguageDisplay(t *testing.T) {
