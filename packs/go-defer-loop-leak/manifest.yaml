@@ -1,0 +1,24 @@
+pack_format_version: 1
+
+id: go-defer-loop-leak
+title: "`defer` inside a loop leaks file descriptors"
+track: bug_review
+difficulty: easy
+tags: [go, defer, resource-leak, file-descriptors]
+recommended_minutes: 5
+
+bug_review:
+  prompt: "ProcessFiles fails with `too many open files` after about a thousand inputs. Where is the bug?"
+  choices:
+    - id: missing_err_check
+      label: "The error from `process(f)` isn't being wrapped, so a transient EAGAIN is being misreported as fd exhaustion."
+      correct: false
+    - id: defer_scope
+      label: "`defer f.Close()` is scoped to the enclosing function, not the loop iteration. Every open file stays open until ProcessFiles returns, so processing N files holds N file descriptors simultaneously and trips the OS limit. Wrap the body in an inner func() (so defer scopes to it) or call f.Close() explicitly per iteration."
+      correct: true
+    - id: parallel_open
+      label: "ProcessFiles is being called concurrently from multiple goroutines, multiplying the open count."
+      correct: false
+    - id: ulimit_low
+      label: "The container's RLIMIT_NOFILE is misconfigured at 1024 and should be raised."
+      correct: false

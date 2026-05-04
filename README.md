@@ -145,6 +145,27 @@ Example (`runners/go.json`):
 }
 ```
 
+Go packs use a flat module layout (the seed packs under `packs/sum-positive`,
+`packs/go-string-utils`, and `packs/go-slice-utils` are working references):
+
+```text
+go-my-pack/
+  manifest.yaml
+  problem.md
+  skeleton/
+    go.mod              # module example.com/<pkg>; go 1.26
+    <pkg>.go            # exported stubs the user implements
+  hidden_tests/
+    <pkg>_test.go       # in-package tests; same `package <pkg>`
+  solution/
+    <pkg>.go            # reference impl, overlays the skeleton stub
+```
+
+Solution files are overlaid on the skeleton (same package, same filename,
+same import path), so `solution/<pkg>.go` replaces `skeleton/<pkg>.go`
+when the contract job verifies that the reference solution passes the
+hidden tests.
+
 The TypeScript runner (`runners/typescript.json`) uses Node's built-in
 test runner. Type stripping is on by default in Node 24+ (stable since
 v24.12.0), so `.ts` files run directly with no install step — which is
@@ -312,6 +333,18 @@ These are intentionally left open; answers should become GitHub issues or small 
 - **Packs:** start by copying `packs/_template-implement` or `packs/_template-bug_review` (if present) and run `bugsim verify-pack <dir>`.
 - **Runners:** add `runners/<id>.json` and a seed pack that uses `runner: <id>`.
 - **Code:** `gofmt` on all Go files; `go test ./...` must pass.
+
+### Pack contract enforcement (CI)
+
+For every implement pack, the `go-packs` and `typescript-packs` CI jobs
+enforce the same contract independently of Docker:
+
+1. The `solution/` overlaid on `skeleton/` must pass `hidden_tests/`.
+2. The `skeleton/` on its own must fail `hidden_tests/`.
+
+If either invariant breaks, CI fails. When you add a new implement
+pack, append its directory name to the matching pack list in
+`.github/workflows/ci.yml`.
 
 ## License
 

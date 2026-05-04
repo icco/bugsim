@@ -1,0 +1,9 @@
+pack_format_version: 1
+
+id: go-string-utils
+title: String utilities (Go) — runes vs bytes
+track: implement
+runner: go
+difficulty: medium
+tags: [go, unicode, utf8, strings]
+recommended_minutes: 12

@@ -1,0 +1,24 @@
+pack_format_version: 1
+
+id: go-typed-nil-error
+title: Typed-nil error sneaks past `err != nil`
+track: bug_review
+difficulty: medium
+tags: [go, interfaces, error, nil, gotcha]
+recommended_minutes: 6
+
+bug_review:
+  prompt: "Lookup(0) clearly returns a nil-valued *DBError, yet callers see `err != nil`. What is happening?"
+  choices:
+    - id: shadowing
+      label: "The inner `dberr` shadows an outer `err`, so the function silently returns the wrong variable."
+      correct: false
+    - id: typed_nil
+      label: "Returning a typed nil pointer (`var dberr *DBError`) from a function whose return type is `error` produces an interface whose type word is non-nil. `err != nil` checks both type and value words, and the type word is `*DBError`, so the comparison is true even though the value word is nil."
+      correct: true
+    - id: error_method
+      label: "`(*DBError).Error()` panics on a nil receiver, and the panic value is being interpreted as a non-nil error."
+      correct: false
+    - id: defer_recover
+      label: "A `defer recover()` somewhere up the stack is converting the function's nil return into a synthetic non-nil error."
+      correct: false
