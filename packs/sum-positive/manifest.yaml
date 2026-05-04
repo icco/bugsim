@@ -1,0 +1,9 @@
+pack_format_version: 1
+
+id: sum-positive
+title: Sum positive integers
+track: implement
+runner: go
+difficulty: easy
+tags: [go, basics]
+recommended_minutes: 5

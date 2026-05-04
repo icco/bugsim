@@ -15,14 +15,14 @@ Maximilian Walterskirchen’s essay [*Piloting Agentic Engineering*](https://mwa
 - **TUI-first, keyboard-driven** sessions (primary interface is the terminal).
 - **Track A — Implement:** read a spec (`problem.md`), work in a **workspace** copied from `skeleton/`, validate with **automated tests** (including tests shipped under `hidden_tests/`).
 - **Track B — Bug review:** read **realistic-ish** broken code and context under `bug/`, then answer in-terminal (v1: **multiple-choice** with automated scoring; later: patches, guided diffs, or external `$EDITOR` workflows—see *Open design questions*).
-- **Polyglot packs (v1 contract):** packs declare a **runner id**; the engine invokes a **runner** (declarative command list) to build/test in an isolated temp directory.
-- **Local subprocess execution** with strict **timeouts** and **working-directory isolation** per run. This is optimized for **trusted, single-user practice machines**.
+- **Polyglot packs (v1 contract):** packs declare a **runner id**; the engine invokes the runner inside a **Docker container** with the workspace mounted in.
+- **Container-isolated execution** per run: short-lived `docker run --rm`, no network by default, CPU/memory/PID caps, fresh temp workspace mount. Optimized for **trusted, single-user practice machines** but with a real isolation boundary.
 
 ## Non-goals (v1)
 
 - Accounts, cloud sync, or competitive global leaderboards.
 - LLM grading of free-text explanations.
-- Strong multi-tenant sandboxing suitable for running **untrusted** user code from the internet.
+- Hardened multi-tenant sandboxing suitable for running **arbitrary internet-sourced code** (Docker is a meaningful boundary, not a perfect one).
 - A full IDE debugger embedded in the TUI.
 
 ## Threat model and safety
@@ -32,13 +32,16 @@ Maximilian Walterskirchen’s essay [*Piloting Agentic Engineering*](https://mwa
 1. The **runner** configuration shipped with bugsim (or extended locally by advanced users), and  
 2. The **problem pack**’s declared runner + file layout.
 
-**Defaults:**
+**Defaults applied to every run:**
 
-- Runs should assume **no network is required** for correctness (pack authors should avoid networked tests).
-- Packs should be treated like **source code you would compile**: only use packs from authors you trust.
-- The engine runs subprocesses with a **timeout** and a **fresh temp dir** per attempt.
+- `docker run --rm` — container removed at exit.
+- `--network=none` — no network unless the runner opts in.
+- `--memory`, `--cpus`, `--pids-limit` — resource caps.
+- `--user $UID:$GID` — runs as the invoking user; files written to the mounted workspace are owned by you, not root.
+- Per-run **fresh temp workspace** mounted at `/workspace`; deleted after the session.
+- Per-invocation **timeout** (default 2m, configurable via `--timeout`).
 
-**Honest limits:** a local subprocess sandbox is **not** a security boundary against malicious packs. If you need that, run bugsim inside an OCI container/VM and treat optional future “remote runner” support as a separate hardening track.
+**Honest limits:** Docker reduces blast radius vs. plain subprocesses, but is **not** a defense against a determined attacker (kernel exploits, Docker socket abuse, side channels). Treat packs you load like any other code you would compile and run; for fully untrusted packs, isolate further (separate user, VM, or remote sandbox).
 
 ## Architecture (target)
 
@@ -122,29 +125,44 @@ bug_review:
 
 Future extensions may add `artifacts/` (logs), `timeline/` (incident narrative), or automated patch grading.
 
-## Runners (`runner.json`)
+## Runners (`runners/<id>.json`)
 
-Runners live in this repository under `runners/*.json` and define how to execute tests in a workspace directory.
+Runners live in this repository under `runners/*.json` and describe how to execute tests inside a Docker container.
 
 Example (`runners/go.json`):
 
 ```json
 {
   "id": "go",
+  "image": "golang:1.22",
+  "env": {
+    "GOCACHE": "/tmp/go-build",
+    "GOMODCACHE": "/tmp/go-mod"
+  },
   "commands": {
     "test": ["go", "test", "./..."]
   }
 }
 ```
 
-Rules:
+Schema:
 
-- The engine resolves `{runner}` from `manifest.yaml` to `runners/{runner}.json`.
-- The engine executes the `test` argv with `cwd = workspaceDir`.
+| Field | Required | Notes |
+|---|---|---|
+| `id` | yes | Must equal the filename stem and the value in `manifest.runner` |
+| `image` | yes | Docker image reference (`name:tag` or digest) |
+| `commands.test` | yes | argv executed inside the container |
+| `env` | no | Extra environment variables (string → string) |
+| `network` | no | `"none"` (default) or `"bridge"` to opt in to network |
+
+Engine behavior:
+
+- The host workspace is bind-mounted at `/workspace` and used as the container working directory.
+- Container is invoked with safe defaults (see *Threat model and safety*).
 - Exit code `0` means pass; non-zero means fail.
-- Timeouts are applied per invocation (see CLI flags).
+- Timeouts are applied per invocation (`--timeout`, default 2m).
 
-Adding a new runner should be **docs + JSON** first, then (if needed) a reference pack.
+Adding a new runner is **docs + JSON** first, then (if helpful) a reference pack that uses it.
 
 ## CLI UX (target)
 
@@ -171,7 +189,7 @@ Common flags:
 
 These are intentional product/engineering choices for the first vertical slice:
 
-- **Execution:** local subprocess + timeout + temp workspace (not Docker-by-default).
+- **Execution:** Docker container per run (`docker run --rm` with resource caps + no-network default + bind-mounted temp workspace). Requires Docker on the host.
 - **Languages:** polyglot via **runner JSON**; Go is the **reference** runner used by the seed packs in this repo.
 
 ## Open design questions

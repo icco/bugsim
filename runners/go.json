@@ -1,0 +1,11 @@
+{
+  "id": "go",
+  "image": "golang:1.22",
+  "env": {
+    "GOCACHE": "/tmp/go-build",
+    "GOMODCACHE": "/tmp/go-mod"
+  },
+  "commands": {
+    "test": ["go", "test", "./..."]
+  }
+}

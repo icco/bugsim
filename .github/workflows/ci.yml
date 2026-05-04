@@ -1,0 +1,59 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test (unit)
+        run: go test ./...
+
+      - name: verify seed packs
+        run: |
+          set -euo pipefail
+          for d in packs/*/; do
+            case "$(basename "$d")" in
+              _*) continue ;;
+            esac
+            go run ./cmd/bugsim verify-pack "$d"
+          done
+
+  integration-docker:
+    runs-on: ubuntu-latest
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: true
+
+      - name: docker version
+        run: docker version
+
+      - name: pre-pull runner image
+        run: docker pull golang:1.22
+
+      - name: integration tests
+        run: go test ./internal/engine -run TestRunTests -v
