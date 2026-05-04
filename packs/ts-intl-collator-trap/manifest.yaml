@@ -1,0 +1,24 @@
+pack_format_version: 1
+
+id: ts-intl-collator-trap
+title: Negative numbers sort weirdly with Intl.Collator
+track: bug_review
+difficulty: medium
+tags: [typescript, intl, sort, surprising-stdlib]
+recommended_minutes: 6
+
+bug_review:
+  prompt: "Why does sortPrices(['-3', '1', '-2', '2']) return ['-2', '-3', '1', '2']?"
+  choices:
+    - id: minus_is_punctuation
+      label: "Intl.Collator with numeric:true treats `-` as a non-numeric separator and sorts the digit sequences (3, 1, 2, 2) numerically — so the leading minus on negatives never reverses their order, and `-2` comes before `-3` because `2 < 3`."
+      correct: true
+    - id: locale_quirk
+      label: "The 'en' locale uses Unicode case-folding rules that invert the order of negative numbers."
+      correct: false
+    - id: unstable_sort
+      label: "Array.prototype.sort is unstable in V8, so re-running the sort gives different results."
+      correct: false
+    - id: spread_index_shift
+      label: "[...prices] returns a new array but with shifted indexes, so the comparator sees the wrong values."
+      correct: false

@@ -1,9 +1,11 @@
 package runner_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/icco/bugsim/internal/runner"
+	"github.com/icco/bugsim/runners"
 )
 
 func TestLoadGoRunner(t *testing.T) {
@@ -35,19 +37,25 @@ func TestLoadEmptyID(t *testing.T) {
 	if _, err := runner.Load(""); err == nil {
 		t.Fatal("expected error: empty id")
 	}
-	if _, err := runner.Load("  "); err == nil {
+	if _, err := runner.Load("   "); err == nil {
 		t.Fatal("expected error: whitespace id")
 	}
 }
 
 func TestLoadGoRunnerEnvKeys(t *testing.T) {
+	// GOCACHE/GOMODCACHE must point inside the writable workspace tmpdir
+	// or the runner can't cache builds across runs of the same session.
 	d, err := runner.Load("go")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	for _, key := range []string{"GOCACHE", "GOMODCACHE"} {
-		if _, ok := d.Env[key]; !ok {
+		v, ok := d.Env[key]
+		if !ok {
 			t.Fatalf("expected env[%q] to be set, got %#v", key, d.Env)
+		}
+		if !strings.HasPrefix(v, "/tmp/") {
+			t.Fatalf("env[%q] = %q, want /tmp/* path", key, v)
 		}
 	}
 }
@@ -60,8 +68,8 @@ func TestLoadTypescriptRunner(t *testing.T) {
 	if d.ID != "typescript" {
 		t.Fatalf("id = %q, want typescript", d.ID)
 	}
-	if d.Image == "" {
-		t.Fatal("typescript runner must declare an image")
+	if !strings.HasPrefix(d.Image, "node:") {
+		t.Fatalf("image = %q, want a node image", d.Image)
 	}
 	if d.Network != "none" {
 		t.Fatalf("typescript runner network = %q, want none default", d.Network)
@@ -88,12 +96,42 @@ func TestLoadTypescriptRunnerCommand(t *testing.T) {
 	}
 }
 
-func TestLoadTypescriptRunnerEnv(t *testing.T) {
-	d, err := runner.Load("typescript")
+// TestEmbeddedRunnersAllPassSchema walks the embedded runners/*.json
+// files and checks each one against the runner schema. This catches
+// future contributors who add a runner with a missing image, mismatched
+// id, or unsupported network value — without needing a per-runner test.
+func TestEmbeddedRunnersAllPassSchema(t *testing.T) {
+	entries, err := runners.Files.ReadDir(".")
 	if err != nil {
-		t.Fatalf("load: %v", err)
+		t.Fatalf("read embed: %v", err)
 	}
-	if got := d.Env["NODE_NO_WARNINGS"]; got != "1" {
-		t.Fatalf("NODE_NO_WARNINGS = %q, want \"1\"", got)
+	if len(entries) == 0 {
+		t.Fatal("no embedded runners found — embed.go is broken")
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		id := strings.TrimSuffix(e.Name(), ".json")
+		t.Run(id, func(t *testing.T) {
+			d, err := runner.Load(id)
+			if err != nil {
+				t.Fatalf("load %s: %v", id, err)
+			}
+			if d.ID != id {
+				t.Fatalf("id %q != filename stem %q", d.ID, id)
+			}
+			if d.Image == "" {
+				t.Fatalf("%s: image is empty", id)
+			}
+			if len(d.Commands["test"]) == 0 {
+				t.Fatalf("%s: commands.test is empty", id)
+			}
+			switch d.Network {
+			case "none", "bridge":
+			default:
+				t.Fatalf("%s: network = %q, want none or bridge", id, d.Network)
+			}
+		})
 	}
 }

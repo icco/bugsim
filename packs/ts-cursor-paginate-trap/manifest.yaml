@@ -1,0 +1,24 @@
+pack_format_version: 1
+
+id: ts-cursor-paginate-trap
+title: Cursor pagination drops rows when timestamps tie
+track: bug_review
+difficulty: medium
+tags: [typescript, pagination, sql, distributed]
+recommended_minutes: 7
+
+bug_review:
+  prompt: "Why does the listener occasionally skip 4–6 events even though no events are deleted?"
+  choices:
+    - id: strict_gt_on_non_unique_key
+      label: "Cursor uses a strict `> last.createdAt` filter on a non-unique sort key. When several events share the same `createdAt` (e.g. a single transaction's writes), every tied row that was on the *previous* page boundary is dropped — the next query excludes them entirely."
+      correct: true
+    - id: unstable_sort
+      label: "Array.prototype.sort is unstable in V8, so tied rows end up in different positions on each page and a few are missed."
+      correct: false
+    - id: ms_precision_loss
+      label: "JavaScript Dates only have millisecond precision, so the cursor encodes a different value than the database stored — every event is therefore unreachable."
+      correct: false
+    - id: filter_then_sort
+      label: "filter() returns a new array but slice() then operates on the wrong indexes, so 4–6 events fall outside the page window."
+      correct: false

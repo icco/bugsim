@@ -1,9 +1,26 @@
-# String utilities (TypeScript)
+# String utilities (Unicode-aware, TypeScript)
 
-Implement the three exported functions in `src/string-utils.ts`:
+Implement three exported functions in `src/string-utils.ts`. The catch:
+input strings can contain emoji (including ZWJ family/profession sequences),
+combining marks, and other multi-code-unit characters. Treat "characters"
+as **user-perceived characters** (grapheme clusters), not as UTF-16 code
+units.
 
-- `reverseString(s: string): string` — return `s` reversed character-by-character.
-- `isPalindrome(s: string): boolean` — true when `s` reads the same forwards and backwards, **case-insensitive** and ignoring any character that is not an ASCII letter or digit (so `"A man, a plan, a canal: Panama"` is a palindrome).
-- `countVowels(s: string): number` — count occurrences of `a, e, i, o, u` (case-insensitive).
+- `reverseString(s: string): string` — reverse `s` by grapheme cluster.
+  Reversing `"a👨‍👩‍👧‍👦b"` must yield `"b👨‍👩‍👧‍👦a"`, not a string with broken
+  surrogate pairs or a torn-apart family emoji.
 
-Tests live under `tests/` and are executed with `node --test --experimental-strip-types tests/`. Press `r` to run them.
+- `isPalindrome(s: string): boolean` — true when `s` reads the same
+  forwards and backwards after:
+    - lowercasing,
+    - stripping anything that isn't a Unicode letter or digit,
+    - normalising to NFC,
+  - and comparing by grapheme cluster.
+
+- `countVowels(s: string): number` — count grapheme clusters whose first
+  base code point (after NFD decomposition) is one of `a, e, i, o, u`,
+  case-insensitive. So `"résumé"` counts as **3**, `"naïve"` as **3**, and
+  `"😀😀"` as **0**.
+
+Hint: `Intl.Segmenter` and `String.prototype.normalize` exist in Node 22+
+and are exactly the right tools for this job.

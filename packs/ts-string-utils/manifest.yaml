@@ -1,9 +1,9 @@
 pack_format_version: 1
 
 id: ts-string-utils
-title: String utilities (TypeScript)
+title: String utilities (Unicode-aware, TypeScript)
 track: implement
 runner: typescript
-difficulty: easy
-tags: [typescript, basics, strings]
-recommended_minutes: 10
+difficulty: hard
+tags: [typescript, unicode, strings]
+recommended_minutes: 15
