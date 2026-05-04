@@ -57,3 +57,44 @@ jobs:
 
       - name: integration tests
         run: go test ./internal/engine -run TestRunTests -v
+
+  typescript-packs:
+    runs-on: ubuntu-latest
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: pack contract — solutions pass, skeletons fail
+        shell: bash
+        run: |
+          set -u
+          fail=0
+          for pack in ts-string-utils ts-list-utils ts-validate-input; do
+            sol_work=$(mktemp -d)
+            cp -R "packs/${pack}/skeleton/." "$sol_work/"
+            cp -R "packs/${pack}/hidden_tests/." "$sol_work/"
+            for src in packs/${pack}/solution/*; do
+              cp "$src" "$sol_work/src/$(basename "$src")"
+            done
+            echo "== $pack: solution applied (must pass) =="
+            if ! (cd "$sol_work" && node --test --experimental-strip-types); then
+              echo "FAIL: $pack solution did not pass its own hidden_tests"
+              fail=1
+            fi
+            rm -rf "$sol_work"
+
+            skel_work=$(mktemp -d)
+            cp -R "packs/${pack}/skeleton/." "$skel_work/"
+            cp -R "packs/${pack}/hidden_tests/." "$skel_work/"
+            echo "== $pack: skeleton only (must fail) =="
+            if (cd "$skel_work" && node --test --experimental-strip-types > /dev/null 2>&1); then
+              echo "FAIL: $pack skeleton accidentally passes hidden_tests"
+              fail=1
+            fi
+            rm -rf "$skel_work"
+          done
+          exit $fail

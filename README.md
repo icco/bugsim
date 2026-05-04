@@ -145,6 +145,35 @@ Example (`runners/go.json`):
 }
 ```
 
+The TypeScript runner (`runners/typescript.json`) uses Node's built-in
+test runner with native type stripping so packs do not require an `npm
+install` step (which would need network access):
+
+```json
+{
+  "id": "typescript",
+  "image": "node:24-slim",
+  "env": { "NODE_NO_WARNINGS": "1" },
+  "commands": {
+    "test": ["node", "--test", "--experimental-strip-types"]
+  }
+}
+```
+
+TypeScript packs should follow this layout (the seed packs under
+`packs/ts-*` are working references):
+
+```text
+ts-my-pack/
+  manifest.yaml
+  problem.md
+  skeleton/
+    package.json        # { "type": "module" }
+    src/<thing>.ts      # exported stubs the user implements
+  hidden_tests/
+    tests/<thing>.test.ts   # node:test cases that import ../src/<thing>.ts
+```
+
 Schema:
 
 | Field | Required | Notes |

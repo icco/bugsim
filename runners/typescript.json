@@ -1,0 +1,10 @@
+{
+  "id": "typescript",
+  "image": "node:24-slim",
+  "env": {
+    "NODE_NO_WARNINGS": "1"
+  },
+  "commands": {
+    "test": ["node", "--test", "--experimental-strip-types"]
+  }
+}

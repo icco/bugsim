@@ -1,0 +1,9 @@
+pack_format_version: 1
+
+id: ts-validate-input
+title: Input validation (TypeScript)
+track: implement
+runner: typescript
+difficulty: medium
+tags: [typescript, validation]
+recommended_minutes: 12

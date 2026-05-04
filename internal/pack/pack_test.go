@@ -3,6 +3,7 @@ package pack_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/icco/bugsim/internal/pack"
@@ -133,6 +134,231 @@ difficulty: easy
 	writeFile(t, filepath.Join(dir, "hidden_tests", "x_test.go"), "package x\n")
 	if _, err := pack.Load(dir); err == nil {
 		t.Fatal("expected error: unsupported version")
+	}
+}
+
+func TestLoadMissingManifest(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := pack.Load(dir); err == nil {
+		t.Fatal("expected error: manifest.yaml missing")
+	}
+}
+
+func TestLoadInvalidYAML(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "manifest.yaml"), "id: [unterminated\n")
+	if _, err := pack.Load(dir); err == nil {
+		t.Fatal("expected error: invalid YAML")
+	}
+}
+
+func TestLoadMissingProblemMD(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "manifest.yaml"), `
+pack_format_version: 1
+id: demo
+title: Demo
+track: implement
+runner: go
+difficulty: easy
+`)
+	writeFile(t, filepath.Join(dir, "skeleton", "x.go"), "package x\n")
+	writeFile(t, filepath.Join(dir, "hidden_tests", "x_test.go"), "package x\n")
+	if _, err := pack.Load(dir); err == nil {
+		t.Fatal("expected error: problem.md missing")
+	}
+}
+
+func TestLoadEmptyTitle(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "manifest.yaml"), `
+pack_format_version: 1
+id: demo
+title: ""
+track: implement
+runner: go
+difficulty: easy
+`)
+	writeFile(t, filepath.Join(dir, "problem.md"), "x")
+	writeFile(t, filepath.Join(dir, "skeleton", "x.go"), "package x\n")
+	writeFile(t, filepath.Join(dir, "hidden_tests", "x_test.go"), "package x\n")
+	if _, err := pack.Load(dir); err == nil {
+		t.Fatal("expected error: empty title")
+	}
+}
+
+func TestLoadInvalidTrack(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "manifest.yaml"), `
+pack_format_version: 1
+id: demo
+title: Demo
+track: nonsense
+runner: go
+difficulty: easy
+`)
+	writeFile(t, filepath.Join(dir, "problem.md"), "x")
+	if _, err := pack.Load(dir); err == nil {
+		t.Fatal("expected error: invalid track")
+	}
+}
+
+func TestLoadInvalidDifficulty(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "manifest.yaml"), `
+pack_format_version: 1
+id: demo
+title: Demo
+track: implement
+runner: go
+difficulty: extreme
+`)
+	writeFile(t, filepath.Join(dir, "problem.md"), "x")
+	writeFile(t, filepath.Join(dir, "skeleton", "x.go"), "package x\n")
+	writeFile(t, filepath.Join(dir, "hidden_tests", "x_test.go"), "package x\n")
+	if _, err := pack.Load(dir); err == nil {
+		t.Fatal("expected error: invalid difficulty")
+	}
+}
+
+func TestLoadImplementMissingHiddenTests(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "manifest.yaml"), `
+pack_format_version: 1
+id: demo
+title: Demo
+track: implement
+runner: go
+difficulty: easy
+`)
+	writeFile(t, filepath.Join(dir, "problem.md"), "demo")
+	writeFile(t, filepath.Join(dir, "skeleton", "x.go"), "package x\n")
+	if _, err := pack.Load(dir); err == nil {
+		t.Fatal("expected error: hidden_tests/ missing")
+	}
+}
+
+func TestLoadImplementMissingRunner(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "manifest.yaml"), `
+pack_format_version: 1
+id: demo
+title: Demo
+track: implement
+difficulty: easy
+`)
+	writeFile(t, filepath.Join(dir, "problem.md"), "demo")
+	writeFile(t, filepath.Join(dir, "skeleton", "x.go"), "package x\n")
+	writeFile(t, filepath.Join(dir, "hidden_tests", "x_test.go"), "package x\n")
+	if _, err := pack.Load(dir); err == nil {
+		t.Fatal("expected error: implement requires runner")
+	}
+}
+
+func TestLoadBugReviewMissingBug(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "manifest.yaml"), `
+pack_format_version: 1
+id: demo-bug
+title: Demo
+track: bug_review
+difficulty: easy
+bug_review:
+  prompt: pick one
+  choices:
+    - id: a
+      label: a
+      correct: true
+    - id: b
+      label: b
+      correct: false
+`)
+	writeFile(t, filepath.Join(dir, "problem.md"), "demo")
+	if _, err := pack.Load(dir); err == nil {
+		t.Fatal("expected error: bug/ missing")
+	}
+}
+
+func TestLoadBugReviewMissingPrompt(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "manifest.yaml"), `
+pack_format_version: 1
+id: demo-bug
+title: Demo
+track: bug_review
+difficulty: easy
+bug_review:
+  prompt: ""
+  choices:
+    - id: a
+      label: a
+      correct: true
+    - id: b
+      label: b
+      correct: false
+`)
+	writeFile(t, filepath.Join(dir, "problem.md"), "demo")
+	writeFile(t, filepath.Join(dir, "bug", "x.txt"), "data\n")
+	if _, err := pack.Load(dir); err == nil {
+		t.Fatal("expected error: empty prompt")
+	}
+}
+
+func TestIsTemplatePack(t *testing.T) {
+	if !pack.IsTemplatePack("_template-implement") {
+		t.Fatal("_template-implement should be a template")
+	}
+	if pack.IsTemplatePack("sum-positive") {
+		t.Fatal("sum-positive should not be a template")
+	}
+}
+
+func TestDiscoverEmpty(t *testing.T) {
+	root := t.TempDir()
+	got, err := pack.Discover(root)
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty, got %+v", got)
+	}
+}
+
+func TestReadBugCorpusIncludesTSFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "manifest.yaml"), `
+pack_format_version: 1
+id: demo-bug
+title: Demo
+track: bug_review
+difficulty: easy
+bug_review:
+  prompt: pick
+  choices:
+    - id: a
+      label: a
+      correct: true
+    - id: b
+      label: b
+      correct: false
+`)
+	writeFile(t, filepath.Join(dir, "problem.md"), "demo")
+	writeFile(t, filepath.Join(dir, "bug", "notes.md"), "## summary\n")
+	writeFile(t, filepath.Join(dir, "bug", "uploader.ts"), "export const ok = true;\n")
+	writeFile(t, filepath.Join(dir, "bug", "ignored.png"), "binary")
+	p, err := pack.Load(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	corpus, err := p.ReadBugCorpus()
+	if err != nil {
+		t.Fatalf("corpus: %v", err)
+	}
+	if !strings.Contains(corpus, "uploader.ts") || !strings.Contains(corpus, "export const ok") {
+		t.Fatalf("expected .ts content in corpus, got:\n%s", corpus)
+	}
+	if strings.Contains(corpus, "ignored.png") {
+		t.Fatalf("did not expect .png in corpus, got:\n%s", corpus)
 	}
 }
 

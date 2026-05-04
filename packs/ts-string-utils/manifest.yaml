@@ -1,0 +1,9 @@
+pack_format_version: 1
+
+id: ts-string-utils
+title: String utilities (TypeScript)
+track: implement
+runner: typescript
+difficulty: easy
+tags: [typescript, basics, strings]
+recommended_minutes: 10

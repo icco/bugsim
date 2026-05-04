@@ -1,0 +1,24 @@
+pack_format_version: 1
+
+id: ts-async-trap
+title: Promise.all that quietly drops failures
+track: bug_review
+difficulty: medium
+tags: [typescript, async, promises]
+recommended_minutes: 7
+
+bug_review:
+  prompt: "Why does the importer report 'success' on every batch even when an upload fails?"
+  choices:
+    - id: catch_swallows
+      label: "The per-upload `.catch(() => null)` swallows rejections so `Promise.all` always resolves to a successful array."
+      correct: true
+    - id: settled_vs_all
+      label: "It uses `Promise.allSettled`, which never throws, instead of `Promise.all`."
+      correct: false
+    - id: missing_await
+      label: "The function is missing `await` in front of `Promise.all`, so failures happen after the function returns."
+      correct: false
+    - id: shared_state
+      label: "Shared mutable `results` array is a TOCTOU bug — successful entries overwrite failures."
+      correct: false
