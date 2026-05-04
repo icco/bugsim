@@ -5,6 +5,7 @@ project_name: bugsim
 before:
   hooks:
     - go mod tidy
+    - ./scripts/completions.sh
 
 builds:
   - id: bugsim
@@ -24,56 +25,58 @@ builds:
     mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
-  - id: bugsim
-    ids: [bugsim]
-    formats: [tar.gz]
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - id: default
     files:
       - README.md
+      - completions/*
 
 checksum:
-  name_template: "checksums.txt"
+  name_template: checksums.txt
 
 snapshot:
-  version_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ .Tag }}-next"
 
 changelog:
-  use: github
+  use: git
   sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - "^ci:"
+  groups:
+    - title: Features
+      regexp: "^feat:"
+      order: 0
+    - title: Bug Fixes
+      regexp: "^fix:"
+      order: 1
+    - title: Other Changes
+      order: 999
 
 release:
   github:
     owner: icco
     name: bugsim
-  draft: false
-  prerelease: auto
+  mode: replace
+  footer: |
+    ---
+    **Full Changelog**: https://github.com/icco/bugsim/compare/{{ .PreviousTag }}...{{ .Tag }}
 
 homebrew_casks:
   - name: bugsim
-    ids: [bugsim]
-    binaries: [bugsim]
+    directory: Casks
     repository:
       owner: icco
       name: homebrew-tap
-      branch: main
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    commit_author:
-      name: goreleaserbot
-      email: "[email protected]"
-    commit_msg_template: "bugsim {{ .Tag }}"
-    homepage: "https://github.com/icco/bugsim"
-    description: "Terminal flight simulator for software engineers."
+    homepage: https://github.com/icco/bugsim
+    description: Terminal flight simulator for software engineers
+    binaries:
+      - bugsim
+    completions:
+      bash: completions/bugsim.bash
+      zsh: completions/_bugsim
+      fish: completions/bugsim.fish
     caveats: |
       bugsim runs each implement-track pack inside a Docker container.
       Install and start Docker before running `bugsim play`.
 
-      Seed packs are not included with the cask. Either clone
+      Seed packs are not bundled with the cask. Either clone
       https://github.com/icco/bugsim and pass `--packs ./packs`, or
       point `--packs` at any directory of pack subdirectories.
     hooks:

@@ -189,28 +189,23 @@ Running the implement track requires Docker on the host either way.
 
 ## Releasing
 
-Releases are produced by [GoReleaser](https://goreleaser.com) on tag push:
+Releases are produced by [GoReleaser](https://goreleaser.com) via
+[`.github/workflows/release.yml`](.github/workflows/release.yml). The workflow
+runs:
 
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
+- on **tag push** (`v*`),
+- on **manual dispatch**, and
+- nightly on **cron** — auto-bumping the version from conventional commits
+  (`feat:` → minor, `BREAKING CHANGE:` → major) and only producing a release if
+  there is something to release.
 
-The [`release` workflow](.github/workflows/release.yml) builds binaries for
-`darwin/{amd64,arm64}` and `linux/{amd64,arm64}`, attaches archives + checksums
-to a GitHub release, and pushes a Homebrew cask to
-[`icco/homebrew-tap`](https://github.com/icco/homebrew-tap).
+It builds binaries for `darwin/{amd64,arm64}` and `linux/{amd64,arm64}`,
+attaches archives + `checksums.txt` to the GitHub release, and pushes a
+Homebrew cask to [`icco/homebrew-tap`](https://github.com/icco/homebrew-tap).
 
-The release job needs one repo secret beyond the default `GITHUB_TOKEN`:
-
-| Secret | Permission | Why |
-|---|---|---|
-| `HOMEBREW_TAP_GITHUB_TOKEN` | fine-grained PAT, contents:write on `icco/homebrew-tap` | Default `GITHUB_TOKEN` cannot push to a different repository |
-
-To create it: GitHub Settings → Developer settings → Personal access tokens →
-Fine-grained tokens → repository access `icco/homebrew-tap` → Repository
-permissions: Contents `Read and write`. Add it to `icco/bugsim` under
-Settings → Secrets and variables → Actions.
+Auth uses the existing `GH_PAT` repo secret (with fallback to the default
+`GITHUB_TOKEN` for in-repo operations); same pattern as the other repos in
+this org. No additional secret is required.
 
 ## CLI UX (target)
 
