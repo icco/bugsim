@@ -81,7 +81,10 @@ pack_format_version: 1
 id: string            # stable id, lowercase kebab-case recommended
 title: string
 track: implement | bug_review
-runner: string        # id of a runner config (see Runners)
+runner: string        # id of a runner config (see Runners). Required for
+                      # both tracks: drives container execution on
+                      # implement packs, and is the language label used
+                      # by the TUI's language picker on bug_review packs.
 difficulty: easy | medium | hard
 tags: [string, ...]   # optional
 
@@ -268,9 +271,16 @@ this org. No additional secret is required.
 
 ```text
 bugsim list --packs <dir>          # list valid packs
-bugsim verify-pack <packDir>     # validate manifest + layout (+ optional test run)
-bugsim play --packs <dir>        # interactive TUI: pick a pack and run
+bugsim verify-pack <packDir>       # validate manifest + layout (+ optional test run)
+bugsim play --packs <dir>          # interactive TUI: pick language → difficulty → random pack
 ```
+
+`bugsim play` opens a three-step picker: choose a **language** (Go,
+TypeScript, …), then a **difficulty** (easy / medium / hard / any), then
+the engine picks a random pack from the matching pool and drops you into
+it. After the run finishes, **enter** / **n** advances to a new random
+pack with the same filters; **esc** changes the difficulty; **L** changes
+the language.
 
 Common flags:
 

@@ -3,6 +3,7 @@ pack_format_version: 1
 id: go-defer-loop-leak
 title: "`defer` inside a loop leaks file descriptors"
 track: bug_review
+runner: go
 difficulty: easy
 tags: [go, defer, resource-leak, file-descriptors]
 recommended_minutes: 5

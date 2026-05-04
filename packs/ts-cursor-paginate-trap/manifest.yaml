@@ -3,6 +3,7 @@ pack_format_version: 1
 id: ts-cursor-paginate-trap
 title: Cursor pagination drops rows when timestamps tie
 track: bug_review
+runner: typescript
 difficulty: medium
 tags: [typescript, pagination, sql, distributed]
 recommended_minutes: 7
