@@ -3,6 +3,7 @@ pack_format_version: 1
 id: off-by-one-paginate
 title: Pagination off-by-one
 track: bug_review
+runner: go
 difficulty: easy
 tags: [bug, pagination, off-by-one]
 recommended_minutes: 5

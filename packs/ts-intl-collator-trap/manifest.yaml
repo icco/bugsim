@@ -3,6 +3,7 @@ pack_format_version: 1
 id: ts-intl-collator-trap
 title: Negative numbers sort weirdly with Intl.Collator
 track: bug_review
+runner: typescript
 difficulty: medium
 tags: [typescript, intl, sort, surprising-stdlib]
 recommended_minutes: 6

@@ -72,6 +72,7 @@ pack_format_version: 1
 id: demo-bug
 title: Demo Bug
 track: bug_review
+runner: go
 difficulty: easy
 bug_review:
   prompt: pick one
@@ -101,6 +102,7 @@ pack_format_version: 1
 id: bad
 title: Bad
 track: bug_review
+runner: go
 difficulty: easy
 bug_review:
   prompt: pick one
@@ -245,6 +247,7 @@ difficulty: easy
 id: demo-bug
 title: Demo
 track: bug_review
+runner: go
 difficulty: easy
 bug_review:
   prompt: pick
@@ -265,6 +268,7 @@ bug_review:
 id: demo-bug
 title: Demo
 track: bug_review
+runner: go
 difficulty: easy
 bug_review:
   prompt: ""
@@ -285,6 +289,7 @@ bug_review:
 id: demo-bug
 title: Demo
 track: bug_review
+runner: go
 difficulty: easy
 bug_review:
   prompt: pick
@@ -295,6 +300,26 @@ bug_review:
 `,
 			hasFiles:  []string{"problem.md", "bug/x.txt"},
 			wantSubst: "at least 2",
+		},
+		{
+			name: "missing runner on bug_review",
+			manifest: `pack_format_version: 1
+id: demo-bug
+title: Demo
+track: bug_review
+difficulty: easy
+bug_review:
+  prompt: pick
+  choices:
+    - id: a
+      label: a
+      correct: true
+    - id: b
+      label: b
+      correct: false
+`,
+			hasFiles:  []string{"problem.md", "bug/x.txt"},
+			wantSubst: "runner",
 		},
 	}
 
@@ -517,6 +542,7 @@ func TestBugReviewRequiresChoiceIDAndLabel(t *testing.T) {
 id: bad
 title: Bad
 track: bug_review
+runner: go
 difficulty: easy
 bug_review:
   prompt: pick
@@ -535,6 +561,7 @@ bug_review:
 id: bad
 title: Bad
 track: bug_review
+runner: go
 difficulty: easy
 bug_review:
   prompt: pick
@@ -622,6 +649,7 @@ pack_format_version: 1
 id: `+id+`
 title: Demo
 track: bug_review
+runner: go
 difficulty: easy
 bug_review:
   prompt: pick

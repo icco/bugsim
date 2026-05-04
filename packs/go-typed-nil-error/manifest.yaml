@@ -3,6 +3,7 @@ pack_format_version: 1
 id: go-typed-nil-error
 title: Typed-nil error sneaks past `err != nil`
 track: bug_review
+runner: go
 difficulty: medium
 tags: [go, interfaces, error, nil, gotcha]
 recommended_minutes: 6

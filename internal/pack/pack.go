@@ -16,8 +16,8 @@ const formatVersion = 1
 type Track string
 
 const (
-	TrackImplement   Track = "implement"
-	TrackBugReview   Track = "bug_review"
+	TrackImplement Track = "implement"
+	TrackBugReview Track = "bug_review"
 )
 
 // Difficulty is a coarse UX label.
@@ -30,6 +30,11 @@ const (
 )
 
 // Manifest is the machine-readable pack metadata (manifest.yaml).
+//
+// Runner doubles as the language/ecosystem label used to filter packs in
+// the TUI ("go", "typescript", ...). For implement packs it also drives
+// container execution; for bug_review packs no container is started, but
+// declaring a runner keeps the language picker honest.
 type Manifest struct {
 	PackFormatVersion int        `yaml:"pack_format_version"`
 	ID                string     `yaml:"id"`
@@ -46,8 +51,8 @@ type Manifest struct {
 
 // BugReview configures the bug_review track (v1: multiple choice).
 type BugReview struct {
-	Prompt  string         `yaml:"prompt"`
-	Choices []BugChoice    `yaml:"choices"`
+	Prompt  string      `yaml:"prompt"`
+	Choices []BugChoice `yaml:"choices"`
 }
 
 // BugChoice is one MCQ option.
@@ -63,12 +68,16 @@ type Pack struct {
 	Manifest Manifest
 }
 
-// Summary is a lightweight listing entry.
+// Summary is a lightweight listing entry. It carries enough metadata to
+// drive the TUI's language/difficulty pickers without re-loading every
+// manifest.
 type Summary struct {
-	ID    string
-	Title string
-	Track Track
-	Dir   string
+	ID         string
+	Title      string
+	Track      Track
+	Runner     string
+	Difficulty Difficulty
+	Dir        string
 }
 
 // IsTemplatePack returns true for packs used as authoring templates.
@@ -103,10 +112,12 @@ func Discover(root string) ([]Summary, error) {
 			return nil, fmt.Errorf("%s: %w", dir, err)
 		}
 		out = append(out, Summary{
-			ID:    p.Manifest.ID,
-			Title: p.Manifest.Title,
-			Track: p.Manifest.Track,
-			Dir:   dir,
+			ID:         p.Manifest.ID,
+			Title:      p.Manifest.Title,
+			Track:      p.Manifest.Track,
+			Runner:     p.Manifest.Runner,
+			Difficulty: p.Manifest.Difficulty,
+			Dir:        dir,
 		})
 	}
 	return out, nil
@@ -152,11 +163,12 @@ func (p *Pack) Validate() error {
 		return fmt.Errorf("manifest.difficulty must be one of easy|medium|hard")
 	}
 
+	if strings.TrimSpace(m.Runner) == "" {
+		return errors.New("manifest.runner is required (for execution on implement packs and as the language label on bug_review packs)")
+	}
+
 	switch m.Track {
 	case TrackImplement:
-		if strings.TrimSpace(m.Runner) == "" {
-			return errors.New("manifest.runner is required for implement packs")
-		}
 		if err := requireDir(filepath.Join(p.Dir, "skeleton")); err != nil {
 			return fmt.Errorf("implement packs require skeleton/: %w", err)
 		}

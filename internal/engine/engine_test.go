@@ -112,6 +112,7 @@ pack_format_version: 1
 id: demo-bug
 title: Demo
 track: bug_review
+runner: go
 difficulty: easy
 bug_review:
   prompt: pick
