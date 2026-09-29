@@ -19,9 +19,9 @@ import (
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/icco/bugsim/internal/engine"
-	"github.com/icco/bugsim/internal/pack"
-	"github.com/icco/bugsim/internal/runner"
+	"go.icco.me/bugsim/internal/engine"
+	"go.icco.me/bugsim/internal/pack"
+	"go.icco.me/bugsim/internal/runner"
 )
 
 // Config controls the interactive session.

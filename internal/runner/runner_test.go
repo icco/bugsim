@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/icco/bugsim/internal/runner"
-	"github.com/icco/bugsim/runners"
+	"go.icco.me/bugsim/internal/runner"
+	"go.icco.me/bugsim/runners"
 )
 
 func TestLoadGoRunner(t *testing.T) {

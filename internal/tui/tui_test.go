@@ -9,7 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/icco/bugsim/internal/pack"
+	"go.icco.me/bugsim/internal/pack"
 )
 
 // writePack lays a minimal valid pack on disk under root/<id>.

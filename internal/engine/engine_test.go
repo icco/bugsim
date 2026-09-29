@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/icco/bugsim/internal/engine"
-	"github.com/icco/bugsim/internal/pack"
-	"github.com/icco/bugsim/internal/runner"
+	"go.icco.me/bugsim/internal/engine"
+	"go.icco.me/bugsim/internal/pack"
+	"go.icco.me/bugsim/internal/runner"
 )
 
 func requireDocker(t *testing.T) {

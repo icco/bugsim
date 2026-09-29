@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/icco/bugsim/internal/pack"
-	"github.com/icco/bugsim/internal/runner"
+	"go.icco.me/bugsim/internal/pack"
+	"go.icco.me/bugsim/internal/runner"
 )
 
 // MaterializeWorkspace copies skeleton/ then hidden_tests/ into dstDir.

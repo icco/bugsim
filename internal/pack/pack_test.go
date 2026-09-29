@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/icco/bugsim/internal/pack"
+	"go.icco.me/bugsim/internal/pack"
 )
 
 func writeFile(t *testing.T, path, content string) {
