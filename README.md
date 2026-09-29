@@ -243,7 +243,7 @@ binary because release binaries are not yet Apple-notarized.
 
 - Pre-built `linux_amd64` / `linux_arm64` tarballs are attached to each
   GitHub release.
-- From source: `go install github.com/icco/bugsim/cmd/bugsim@latest`.
+- From source: `go install go.icco.me/bugsim/cmd/bugsim@latest`.
 
 Running the implement track requires Docker on the host either way.
 

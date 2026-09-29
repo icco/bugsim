@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/icco/bugsim/runners"
+	"go.icco.me/bugsim/runners"
 )
 
 // Definition is a declarative runner (runners/<id>.json).

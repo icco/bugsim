@@ -14,8 +14,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/icco/bugsim/internal/pack"
-	"github.com/icco/bugsim/internal/tui"
+	"go.icco.me/bugsim/internal/pack"
+	"go.icco.me/bugsim/internal/tui"
 )
 
 // These are populated at link time by goreleaser. When unset (e.g. `go run`),
