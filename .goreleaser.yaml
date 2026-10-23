@@ -1,20 +1,21 @@
 version: 2
-
 project_name: bugsim
-
 before:
   hooks:
     - go mod tidy
     - ./scripts/completions.sh
-
 builds:
   - id: bugsim
     main: ./cmd/bugsim
     binary: bugsim
     env:
       - CGO_ENABLED=0
-    goos: [darwin, linux]
-    goarch: [amd64, arm64]
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
     flags:
       - -trimpath
     ldflags:
@@ -22,33 +23,28 @@ builds:
       - -X main.version={{.Version}}
       - -X main.commit={{.ShortCommit}}
       - -X main.date={{.CommitDate}}
-    mod_timestamp: "{{ .CommitTimestamp }}"
-
+    mod_timestamp: '{{ .CommitTimestamp }}'
 archives:
   - id: default
     files:
       - README.md
       - completions/*
-
 checksum:
   name_template: checksums.txt
-
 snapshot:
-  version_template: "{{ .Tag }}-next"
-
+  version_template: '{{ .Tag }}-next'
 changelog:
   use: git
   sort: asc
   groups:
     - title: Features
-      regexp: "^feat:"
+      regexp: '^feat:'
       order: 0
     - title: Bug Fixes
-      regexp: "^fix:"
+      regexp: '^fix:'
       order: 1
     - title: Other Changes
       order: 999
-
 release:
   github:
     owner: icco
@@ -57,7 +53,6 @@ release:
   footer: |
     ---
     **Full Changelog**: https://github.com/icco/bugsim/compare/{{ .PreviousTag }}...{{ .Tag }}
-
 homebrew_casks:
   - name: bugsim
     directory: Casks
@@ -81,7 +76,7 @@ homebrew_casks:
       point `--packs` at any directory of pack subdirectories.
     hooks:
       post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/bugsim"]
+        install_steps: |
+          on_macos do
+            run '/usr/bin/xattr', args: ['-dr', 'com.apple.quarantine', '{{ .StagedPath }}/bugsim']
           end
